@@ -320,8 +320,16 @@ impl EventHandler for Handler {
                 .required(true),
             );
 
-        if let Err(e) = Command::set_global_commands(&ctx.http, vec![setup]).await {
-            eprintln!("Failed to register commands: {e}");
+        // Register globally
+        if let Err(e) = Command::set_global_commands(&ctx.http, vec![setup.clone()]).await {
+            eprintln!("Failed to register global commands: {e}");
+        }
+
+        // Register immediately for all connected guilds so /setup shows up instantly
+        for guild in &ready.guilds {
+            if let Err(e) = guild.id.set_commands(&ctx.http, vec![setup.clone()]).await {
+                eprintln!("Failed to register guild commands for {}: {e}", guild.id);
+            }
         }
     }
 
@@ -373,7 +381,7 @@ impl EventHandler for Handler {
             }
             "✊ Key verified and saved! Ping me or reply to my messages to get started."
         } else {
-            "❌ Groq rejected that key. Get one at https://console.groq.com/keys and try /setup again."
+            "❌ Groq rejected that key. Get one at [https://console.groq.com/keys](https://console.groq.com/keys) and try /setup again."
         };
 
         let _ = cmd

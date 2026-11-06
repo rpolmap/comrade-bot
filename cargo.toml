@@ -1,0 +1,12 @@
+[package]
+name = "comrade-bot"
+version = "0.2.0"
+edition = "2021"
+
+[dependencies]
+serenity = "0.12"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+serde_json = "1"
+dotenvy = "0.15"
+fastrand = "2"

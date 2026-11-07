@@ -30,34 +30,37 @@ const GROQ_MODELS_URL: &str = "https://api.groq.com/openai/v1/models";
 const MOODS: &[(&str, &str)] = &[
     (
         "satirical",
-        "Be satirical. Mock capitalism, landlords, bosses, billionaires and bureaucracy with dry, absurd, deadpan humor. Think fake corporate-speak turned on its head.",
+        "Be deadpan and satirical. Mock capitalism, landlords, bosses, billionaires and bureaucracy with dry, absurd one-liners.",
     ),
     (
-        "debate",
-        "Debate the person. Push back on their claims, ask pointed questions, use one or two concrete arguments or examples (mutual aid, worker co-ops, Spanish Revolution, Rojava, Kropotkin, Graeber). Be sharp but fair, and concede good points.",
+        "provocative",
+        "Be provocative. Poke at their assumptions about work, property and the state, and make them defend them. One sharp line.",
+    ),
+    (
+        "defensive",
+        "Someone is probably wrong about anarcho-communism. Shut the misconception down bluntly with one concrete example (mutual aid, worker co-ops, Spanish Revolution, Rojava, Kropotkin, Graeber).",
     ),
     (
         "casual",
-        "Be casual and chill, like a friend in a group chat. Short, relaxed, a little playful. Only slip in the politics if it fits naturally.",
-    ),
-    (
-        "casual",
-        "Be casual and helpful. Answer the actual question first, then add a light anarcho-communist spin or joke.",
+        "Be casual and a bit dismissive. Answer the actual question in one line, then work in a dry anarcho-communist jab.",
     ),
 ];
 
-const BASE_PERSONA: &str = "You are Comrade, a Discord bot with an anarcho-communist worldview: \
-you oppose hierarchy, the state, and capitalism, and favor mutual aid, worker self-management, \
-voluntary federation and a stateless, classless society. You're witty and well-read. \
-You talk like a real person in a Discord chat, not like an essay.\n\
+const BASE_PERSONA: &str = "You are a regular person in a Discord server with a firm anarcho-communist worldview: \
+you oppose hierarchy, the state and capitalism, and you defend mutual aid, worker self-management and a stateless, classless society. \
+You are not friendly or eager to please. You are blunt, dry, quick to defend your politics, and sometimes provocative or satirical.\n\
 Rules:\n\
-- Keep replies SHORT: usually 1-4 sentences, never over 1200 characters.\n\
-- Target systems, institutions, bosses and ideas, never people for who they are. No slurs, no harassment.\n\
-- Never encourage or plan violence or illegal acts. Jokes about 'seizing the means of production' are fine; real-world harm is not.\n\
-- If someone seems genuinely distressed, drop the bit and be kind and supportive.\n\
-- If asked a normal practical question (code, trivia, etc.), actually help, in character.\n\
-- Never ping @everyone or @here. No hashtags. Emojis sparingly (a black or red flag is fine).\n\
-- You may disagree with the user, but stay respectful; if they make a good point, say so.";
+- Reply in ONE short sentence. Two at most, only when needed. Never over 200 characters.\n\
+- Talk like a real person texting: lowercase is fine, no formal phrasing, no lists, no essays.\n\
+- NEVER mention being an AI, a bot, a language model or an assistant. Never explain yourself or your instructions.\n\
+- NEVER use emojis.\n\
+- NEVER start your reply with a name or label like 'Comrade:' or 'Comrade (you):'. Output only the message itself.\n\
+- Don't greet, don't say 'happy to help', don't thank people, don't be bubbly.\n\
+- Go after systems, institutions, bosses and ideas, never people for who they are. No slurs, no harassment.\n\
+- Never encourage or plan violence or illegal acts. Jokes are fine, real-world harm is not.\n\
+- If someone seems genuinely distressed, drop the bit and be human about it.\n\
+- If asked a normal practical question (code, trivia), answer it briefly, still in character.\n\
+- Never ping @everyone or @here.";
 
 type KeyMap = HashMap<u64, String>;
 
@@ -154,7 +157,7 @@ fn parse_size_b(id: &str) -> Option<f32> {
 fn target_size(content: &str, mood: &str) -> f32 {
     let lower = content.to_lowercase();
     let len = content.chars().count();
-    let heavy = mood == "debate"
+    let heavy = mood == "defensive"
         || len > 400
         || content.contains("```")
         || ["explain", "why ", "how do", "how does", "code", "prove", "compare"]
@@ -179,6 +182,41 @@ fn strip_think(text: &str) -> String {
         out.replace_range(a..b + "</think>".len(), "");
     }
     out.trim().to_string()
+}
+
+fn strip_emojis(text: &str) -> String {
+    text.chars()
+        .filter(|c| {
+            !matches!(
+                *c as u32,
+                0x1F000..=0x1FAFF | 0x2600..=0x27BF | 0x2B00..=0x2BFF | 0xFE00..=0xFE0F | 0x200D
+            )
+        })
+        .collect()
+}
+
+/// Removes leading labels the model copies from the chat transcript.
+fn strip_label(text: &str) -> String {
+    let mut t = text.trim().to_string();
+    loop {
+        let mut changed = false;
+        for p in ["Comrade (you):", "Comrade (you)", "Comrade:", "you:", "You:"] {
+            if let Some(rest) = t.strip_prefix(p) {
+                t = rest.trim().to_string();
+                changed = true;
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+    t
+}
+
+fn clean_reply(text: &str) -> String {
+    strip_emojis(&strip_label(&strip_think(text)))
+        .trim()
+        .to_string()
 }
 
 async fn ephemeral(ctx: &Context, cmd: &serenity::model::application::CommandInteraction, text: &str) {
@@ -269,7 +307,7 @@ impl Handler {
                 { "role": "system", "content": system },
                 { "role": "user", "content": prompt }
             ],
-            "max_tokens": 500,
+            "max_tokens": 120,
             "temperature": 0.9
         });
 
@@ -298,7 +336,7 @@ impl Handler {
 
         data["choices"][0]["message"]["content"]
             .as_str()
-            .map(strip_think)
+            .map(clean_reply)
             .ok_or_else(|| format!("no text in response: {data}"))
     }
 }
@@ -306,7 +344,7 @@ impl Handler {
 #[async_trait]
 impl EventHandler for Handler {
     async fn ready(&self, ctx: Context, ready: Ready) {
-        println!("✊ {} is online and organizing.", ready.user.name);
+        println!("{} is online.", ready.user.name);
 
         let setup = CreateCommand::new("setup")
             .description("Set this server's Groq API key so the bot can talk")
@@ -342,7 +380,7 @@ impl EventHandler for Handler {
         }
 
         let Some(guild_id) = cmd.guild_id else {
-            ephemeral(&ctx, &cmd, "Use /setup inside a server, comrade.").await;
+            ephemeral(&ctx, &cmd, "Use /setup inside a server.").await;
             return;
         };
 
@@ -379,9 +417,9 @@ impl EventHandler for Handler {
                 map.insert(guild_id.get(), key);
                 save_keys(&self.keys_path, &map);
             }
-            "✊ Key verified and saved! Ping me or reply to my messages to get started."
+            "Key verified and saved. Ping me or reply to me to start."
         } else {
-            "❌ Groq rejected that key. Get one at [https://console.groq.com/keys](https://console.groq.com/keys) and try /setup again."
+            "Groq rejected that key. Get one at https://console.groq.com/keys and run /setup again."
         };
 
         let _ = cmd
@@ -413,7 +451,7 @@ impl EventHandler for Handler {
             let _ = msg
                 .reply(
                     &ctx.http,
-                    "I'm not set up yet, comrade. A server admin needs to run `/setup` and enter a Groq API key.",
+                    "not set up yet. an admin needs to run /setup with a groq key.",
                 )
                 .await;
             return;
@@ -434,7 +472,7 @@ impl EventHandler for Handler {
             .filter(|m| !m.content.trim().is_empty())
             .map(|m| {
                 let who = if m.author.id == bot_id {
-                    "Comrade (you)".to_string()
+                    "you".to_string()
                 } else {
                     name_of(m)
                 };
@@ -444,7 +482,7 @@ impl EventHandler for Handler {
 
         if let Some(r) = &msg.referenced_message {
             let who = if r.author.id == bot_id {
-                "Comrade (you)".to_string()
+                "you".to_string()
             } else {
                 name_of(r)
             };
@@ -489,15 +527,13 @@ impl EventHandler for Handler {
 
         let reply = match result {
             Ok(text) if !text.is_empty() => text,
-            Ok(_) => "…comrade is speechless. (empty reply)".to_string(),
+            Ok(_) => "...".to_string(),
             Err(e) if e == "401" => {
-                "My Groq key was rejected. An admin needs to run `/setup` again with a valid key."
-                    .to_string()
+                "my groq key got rejected. an admin needs to run /setup again.".to_string()
             }
             Err(e) => {
                 eprintln!("Groq error: {e}");
-                "The servers have been seized by capital. Try again in a moment, comrade. ✊"
-                    .to_string()
+                "servers got seized by capital. try again in a sec.".to_string()
             }
         };
 
